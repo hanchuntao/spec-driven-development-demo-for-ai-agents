@@ -36,7 +36,7 @@
 ## 目录结构
 
 ```
-spec-driven-development-for-ai-agents/
+spec-driven-development-demo-for-ai-agents/
 ├── README.md                           # 本文件
 ├── LICENSE                             # MIT
 ├── specs/                              # Spec 定义（YAML）
@@ -78,7 +78,7 @@ spec-driven-development-for-ai-agents/
 ### 安装
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/hanchuntao/spec-driven-development-demo-for-ai-agents.git
 cd spec-driven-development-for-ai-agents
 pip install pytest pyyaml
 ```
@@ -125,4 +125,4 @@ MIT — 详见 [LICENSE](./LICENSE)
 
 ---
 
-*本项目代码提取自《AI时代如何做SDD：把Agent的行为边界写进契约》一文，完整文章见 [output/AI时代如何做SDD.md](../output/AI时代如何做SDD.md)*
+*本项目代码提取自《AI时代如何做SDD：把Agent的行为边界写进契约》一文*
