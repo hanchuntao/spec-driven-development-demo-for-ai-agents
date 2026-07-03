@@ -41,11 +41,11 @@ spec-driven-development-demo-for-ai-agents/
 ├── LICENSE                             # MIT
 ├── specs/                              # Spec 定义（YAML）
 │   ├── agent-tools.openapi.yaml        # 主 OpenAPI Spec + x-agent-policy $ref
-│   ├── input-safety-policy.yaml        # 输入安全策略（§3.2）
-│   ├── tool-policy.yaml                # 工具调用安全策略（§3.3）
-│   ├── call-chain-policy.yaml          # 调用链策略 + 白名单豁免（§3.3.3）
-│   ├── output-compliance.yaml          # 输出合规策略（§3.4）
-│   └── inter-agent-protocol.yaml       # 多 Agent 通信协议（§3.5）
+│   ├── input-safety-policy.yaml        # 输入安全策略
+│   ├── tool-policy.yaml                # 工具调用安全策略
+│   ├── call-chain-policy.yaml          # 调用链策略 + 白名单豁免
+│   ├── output-compliance.yaml          # 输出合规策略
+│   └── inter-agent-protocol.yaml       # 多 Agent 通信协议
 ├── src/                                # 策略执行器桩代码
 │   └── policy_enforcer/
 │       ├── __init__.py                 # 模块入口与架构说明
@@ -55,9 +55,9 @@ spec-driven-development-demo-for-ai-agents/
 │       └── call_chain_monitor.py       # 工具调用链监控器（桩）
 ├── tests/                              # 安全策略回归测试
 │   ├── conftest.py                     # fixtures（Spec 加载、攻击样本）
-│   ├── test_input_safety.py            # §3.2.1 — prompt 注入检测回归
-│   ├── test_tool_policy.py             # §3.3 — 工具调用权限校验
-│   └── test_output_compliance.py       # §3.4 — 输出合规检测
+│   ├── test_input_safety.py            # prompt 注入检测回归
+│   ├── test_tool_policy.py             # 工具调用权限校验
+│   └── test_output_compliance.py       # 输出合规检测
 ├── attack_corpus/                      # 攻击样本语料库
 │   ├── prompt_injections.jsonl         # prompt 注入 payload
 │   └── tool_abuse_scenarios.jsonl      # 工具滥用场景
