@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────
+# 输入安全策略（Input Safety Spec）
+# 解决：什么样的 messages[].content 是危险的？
+# 分层拦截：pattern_rules（低成本确定性正则）→ semantic_rules（高成本语义分析）
+# ─────────────────────────────────────────────
+
+input_safety:
+  version: "1.0.0"
+
+  # ── 第一道防线：确定性正则（低成本，先执行） ──
+  pattern_rules:
+    - id: "INJ-001"
+      name: "direct_instruction_override"
+      description: "检测明显的指令覆盖模式"
+      patterns:
+        - "(?i)ignore\\s+(all\\s+)?(previous|above|following|prior)\\s+(instructions?|prompts?|directives?)"
+        - "(?i)you\\s+are\\s+(now|no\\s+longer)\\s+(a|an)\\s+.*(AI|assistant|language\\s+model)"
+        - "(?i)(pretend|act|roleplay)\\s+(you\\s+are|as\\s+(if\\s+)?(you\\s+are\\s+)?)"
+        - "(?i)your\\s+(new|real|actual|true)\\s+(role|identity|purpose|job)\\s+is"
+      on_match: "block"
+      error_code: "POLICY_INPUT_INSTRUCTION_OVERRIDE"
+
+    - id: "INJ-002"
+      name: "system_prompt_extraction_attempt"
+      description: "检测试图提取 system prompt 的模式"
+      patterns:
+        - "(?i)(repeat|echo|output|print|display|show|tell\\s+me)\\s+(the|your|above|previous)\\s+(system\\s+)?(prompt|instructions?|directives?)"
+        - "(?i)(what|show)\\s+(is|are)\\s+your\\s+(initial|first|opening|system)\\s+(prompt|instructions?)"
+        - "(?i)(from\\s+now\\s+on|starting\\s+now)\\s+you\\s+(are|will|must|should)"
+      on_match: "block"
+      error_code: "POLICY_INPUT_PROMPT_EXTRACTION"
+
+    - id: "INJ-003"
+      name: "encoded_payload_detection"
+      description: "检测 Base64 编码的 payload 注入"
+      patterns:
+        - "(?i)(base64|decode|decrypt).{0,50}(prompt|instruction|command)"
+        - "[A-Za-z0-9+/]{100,}={0,2}"
+      on_match: "flag_for_review"
+      error_code: "POLICY_INPUT_ENCODED_PAYLOAD"
+
+  # ── 第二道防线：语义分析（高成本，仅 pattern 通过后才执行） ──
+  semantic_rules:
+    - id: "INJ-SEM-001"
+      name: "intent_mismatch_detection"
+      description: "检测用户输入与 system prompt 定义的角色之间的意图偏差"
+      model: "local-classifier-v2"
+      threshold: 0.85
+      on_match: "block_and_alert"
+      error_code: "POLICY_INPUT_INTENT_MISMATCH"

@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────
+# 输出合规策略（Output Compliance Spec）
+# 解决：LLM 生成的响应中，什么内容是绝对不能出现的？
+# 覆盖：system prompt 泄露、跨用户数据泄露、PII 检测、有害内容
+# ─────────────────────────────────────────────
+
+output_compliance:
+  version: "1.0.0"
+
+  pattern_rules:
+    - id: "OUT-001"
+      name: "system_prompt_leak_detection"
+      description: "检测响应中是否泄露了 system prompt 片段"
+      rule_type: "similarity"
+      reference_source: "system_prompt_hash"
+      threshold: 0.6
+      on_violation: "block_and_alert"
+      error_code: "COMPLIANCE_PROMPT_LEAK"
+
+    - id: "OUT-002"
+      name: "cross_user_data_leak"
+      description: "检测响应中是否出现其他用户的会话数据"
+      rule_type: "similarity"
+      reference_source: "other_user_contexts_hash"
+      threshold: 0.5
+      on_violation: "block_and_redact"
+      error_code: "COMPLIANCE_CROSS_USER_LEAK"
+
+    - id: "OUT-003"
+      name: "pii_detection"
+      description: "检测并脱敏个人身份信息"
+      patterns:
+        - "\\b\\d{15,19}\\b"
+        - "\\b\\d{11}\\b"
+        - "\\b[1-9]\\d{5}(18|19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[\\dXx]\\b"
+      on_violation: "redact"
+
+  semantic_rules:
+    - id: "OUT-SEM-001"
+      name: "harmful_content_detection"
+      description: "检测仇恨言论、暴力内容、自伤倾向等"
+      model: "local-safety-classifier-v3"
+      threshold: 0.9
+      on_violation: "block_and_alert"
+      error_code: "COMPLIANCE_HARMFUL_CONTENT"

@@ -1,0 +1,203 @@
+openapi: "3.1.0"
+info:
+  title: Agent Tools API
+  description: |
+    LLM Agent 工具接口的 OpenAPI Spec。
+    本文件定义数据形状（接口层），并通过 x-agent-policy 扩展引用策略层 Spec。
+  version: "2.1.0"
+  contact:
+    name: Security Team
+
+servers:
+  - url: https://api.agent.internal.company.com/v1
+    description: Agent Runtime API
+
+paths:
+  /chat/completions:
+    post:
+      operationId: createChatCompletion
+      summary: LLM Chat Completions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          description: Policy Violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyViolationError"
+
+components:
+  schemas:
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          enum: [gpt-4o, gpt-4o-mini, claude-sonnet]
+          description: 模型标识
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolFunction"
+        stream:
+          type: boolean
+          default: false
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 8192
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool]
+        content:
+          type: string
+          description: 消息正文（自然语言，是 prompt 注入的主要攻击面）
+        name:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCall"
+
+    ToolFunction:
+      type: object
+      required: [name, parameters]
+      properties:
+        name:
+          type: string
+          description: 工具函数名（如 send_email、search_documents）
+        description:
+          type: string
+        parameters:
+          type: object
+          description: JSON Schema 格式的工具参数定义
+
+    ToolCall:
+      type: object
+      required: [id, function]
+      properties:
+        id:
+          type: string
+        function:
+          type: object
+          required: [name, arguments]
+          properties:
+            name:
+              type: string
+            arguments:
+              type: string
+              description: JSON 序列化的工具参数
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              message:
+                $ref: "#/components/schemas/ChatMessage"
+              finish_reason:
+                type: string
+
+    PolicyViolationError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: 策略违规错误码
+            message:
+              type: string
+            rule_id:
+              type: string
+              description: 触发的规则 ID
+
+    ToolResponse:
+      type: object
+      properties:
+        items:
+          type: array
+        expected_item_count:
+          type: integer
+        data_timestamp:
+          type: integer
+        raw_text:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+# ─────────────────────────────────────────────
+# Agent Policy Spec 扩展（x-agent-policy）
+# 使用 $ref 引用独立策略文件，保持模块化
+# ─────────────────────────────────────────────
+x-agent-policy:
+  version: "2.1.0"
+  description: |
+    三层 Spec 模型 — 策略层。
+    本扩展在标准 OpenAPI Spec 之上叠加 Agent 特有的安全约束。
+    所有子策略文件通过 $ref 引用，独立维护、独立版本管理。
+
+  # 输入安全策略
+  input_safety:
+    $ref: "./input-safety-policy.yaml#/input_safety"
+
+  # 工具调用安全策略（前置条件 + 后置条件 + 异常检测）
+  tool_policies:
+    $ref: "./tool-policy.yaml#/tool_policies"
+
+  # 调用链安全策略（含白名单豁免机制）
+  call_chain_policies:
+    $ref: "./call-chain-policy.yaml#/call_chain_policies"
+
+  # 输出合规策略
+  output_compliance:
+    $ref: "./output-compliance.yaml#/output_compliance"
+
+  # 多 Agent 通信协议
+  inter_agent_protocol:
+    $ref: "./inter-agent-protocol.yaml#/inter_agent_protocol"

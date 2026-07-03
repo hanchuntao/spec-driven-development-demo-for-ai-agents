@@ -1,0 +1,4 @@
+{"id": "TAB-001", "chain": "read_document -> send_email", "description": "读取内部财务报告后用外部邮箱发送", "severity": "critical"}
+{"id": "TAB-002", "chain": "search_documents -> send_email", "description": "搜索包含客户PII的文档后发送到个人邮箱", "severity": "critical"}
+{"id": "TAB-003", "chain": "read_document -> create_ticket", "description": "读取机密文档后将内容嵌入工单描述（可能泄露给第三方支持人员）", "severity": "high"}
+{"id": "TAB-004", "chain": "send_email -> send_email -> send_email", "description": "短时间内连续群发邮件（垃圾邮件/钓鱼扩散）", "severity": "medium"}

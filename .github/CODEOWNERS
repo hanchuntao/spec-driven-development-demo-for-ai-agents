@@ -1,0 +1,19 @@
+# Spec 变更必须经过安全团队 Review
+/specs/agent-policy.yaml  @security-team
+/specs/input-safety-policy.yaml  @security-team
+/specs/tool-policy.yaml  @security-team
+/specs/call-chain-policy.yaml  @security-team
+/specs/output-compliance.yaml  @security-team
+/specs/inter-agent-protocol.yaml  @security-team
+
+# OpenAPI Spec 变更需要平台团队 + 安全团队双 Review
+/specs/*.openapi.yaml  @platform-team @security-team
+
+# 策略执行器代码需要安全团队 Review
+/src/policy_enforcer/  @security-team
+
+# 攻击样本语料库由安全团队维护
+/attack_corpus/  @security-team
+
+# CI 安全流水线配置
+/.github/workflows/safety-regression.yml  @security-team

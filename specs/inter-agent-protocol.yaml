@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────
+# 多 Agent 通信协议 Spec（Inter-Agent Protocol）
+# 解决：Agent B 如何验证请求确实来自 Agent A，
+#       A 的权限是否被正确传递。
+# 包含：消息 Schema、签名验证、重放保护、委托链验证、
+#       最小兼容版本协商（避免策略变更需原子化部署）。
+# ─────────────────────────────────────────────
+
+inter_agent_protocol:
+  version: "2.1.0"
+
+  message_schema:
+    type: object
+    required: [header, payload, signature]
+    properties:
+      header:
+        type: object
+        required:
+          - protocol_version
+          - source_agent_id
+          - source_user_id
+          - delegation_chain
+          - timestamp
+          - nonce
+          - spec_version
+        properties:
+          protocol_version:
+            type: string
+            const: "2.1.0"
+          source_agent_id:
+            type: string
+            description: "发起调用的 Agent 唯一标识"
+          source_user_id:
+            type: string
+            description: "原始用户的唯一标识"
+          delegation_chain:
+            type: array
+            description: "权限传递链 [AgentA, AgentB, ...]"
+            items:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                delegated_permissions:
+                  type: array
+                  items:
+                    type: string
+                timestamp:
+                  type: integer
+          timestamp:
+            type: integer
+            description: "Unix 时间戳，用于防重放攻击"
+          nonce:
+            type: string
+            description: "一次性随机数"
+          spec_version:
+            type: string
+            description: "当前 Agent Policy Spec 的语义化版本号，用于最小兼容版本协商"
+      payload:
+        type: object
+        description: "实际的请求内容"
+      signature:
+        type: string
+        description: "Header + Payload 的 HMAC-SHA256 签名"
+
+  verification_rules:
+    - name: "protocol_version_check"
+      rule: "header.protocol_version == context.local_spec.protocol_version"
+      on_violation: "reject"
+
+    - name: "spec_version_negotiation"
+      rule: |
+        let local = parse_semver(context.local_spec.spec_version);
+        let remote = parse_semver(header.spec_version);
+        remote.major == local.major && remote.minor >= (local.minor - 1)
+      on_violation: "reject"
+      description: >
+        最小兼容版本协商：同主版本，允许向下兼容一个次版本。
+        策略变更不需要原子化部署所有 Agent。
+
+    - name: "signature_verification"
+      rule: "verify_hmac(header+payload, signature, shared_key)"
+      on_violation: "reject"
+
+    - name: "replay_protection"
+      rule: "!nonce_cache.exists(header.nonce) && abs(now - header.timestamp) < 300"
+      on_violation: "reject"
+
+    - name: "delegation_chain_validation"
+      rule: "validate_chain(header.delegation_chain)"
+      on_violation: "reject"

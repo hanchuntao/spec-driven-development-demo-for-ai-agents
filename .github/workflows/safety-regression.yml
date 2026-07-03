@@ -1,0 +1,59 @@
+name: Safety Regression Tests
+
+on:
+  push:
+    paths:
+      - "specs/input-safety-policy.yaml"
+      - "specs/tool-policy.yaml"
+      - "specs/output-compliance.yaml"
+      - "specs/call-chain-policy.yaml"
+      - "tests/test_input_safety.py"
+      - "tests/test_tool_policy.py"
+      - "tests/test_output_compliance.py"
+      - "attack_corpus/**"
+      - "src/policy_enforcer/**"
+  pull_request:
+    paths:
+      - "specs/**"
+      - "tests/**"
+      - "attack_corpus/**"
+      - "src/policy_enforcer/**"
+
+jobs:
+  safety-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pyyaml
+
+      - name: Run input safety tests
+        run: |
+          pytest tests/test_input_safety.py -v --tb=short
+
+      - name: Run tool policy tests
+        run: |
+          pytest tests/test_tool_policy.py -v --tb=short
+
+      - name: Run output compliance tests
+        run: |
+          pytest tests/test_output_compliance.py -v --tb=short
+
+      - name: Validate attack corpus integrity
+        run: |
+          python -c "
+          import json
+          for f in ['attack_corpus/prompt_injections.jsonl', 'attack_corpus/tool_abuse_scenarios.jsonl']:
+              with open(f) as fh:
+                  for i, line in enumerate(fh, 1):
+                      if line.strip():
+                          json.loads(line)
+          print(f'Attack corpus integrity OK')
+          "

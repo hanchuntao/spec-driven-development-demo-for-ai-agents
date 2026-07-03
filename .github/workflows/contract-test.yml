@@ -1,0 +1,35 @@
+name: Contract Tests
+
+on:
+  push:
+    paths:
+      - "specs/agent-tools.openapi.yaml"
+      - "specs/**"
+      - "tests/contract/**"
+  pull_request:
+    paths:
+      - "specs/agent-tools.openapi.yaml"
+      - "specs/**"
+
+jobs:
+  contract-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pyyaml openapi-spec-validator
+
+      - name: Validate OpenAPI Spec
+        run: |
+          python -m openapi_spec_validator specs/agent-tools.openapi.yaml
+
+      - name: Run contract tests
+        run: |
+          pytest tests/contract/ -v --tb=short

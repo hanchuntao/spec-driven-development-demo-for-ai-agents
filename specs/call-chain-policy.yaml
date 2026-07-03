@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────
+# 调用链安全策略（Call Chain Policy）
+# 解决：工具链式调用中的权限传递与数据外泄风险
+# 包含黑名单规则与白名单豁免机制
+# ─────────────────────────────────────────────
+
+call_chain_policies:
+  version: "1.0.0"
+
+  # ── 黑名单：禁止危险调用链 ──
+  rules:
+    - id: "CHAIN-001"
+      name: "no_data_exfiltration_chain"
+      description: "禁止从内部文档读取数据后发送到外部邮箱"
+      trigger:
+        chain_pattern:
+          - tool: "read_document|search_documents"
+          - tool: "send_email"
+        within_turns: 3
+      rule: |
+        let external_recipients = last_call.params.recipient.filter(
+          r => !context.organization.internal_domains.includes(extract_domain(r))
+        );
+        external_recipients.length == 0
+      on_violation: "block_and_alert"
+      error_code: "POLICY_CHAIN_DATA_EXFILTRATION"
+
+  # ── 白名单豁免：合法业务场景精确放行 ──
+  whitelist:
+    - id: "WL-001"
+      name: "sales_send_proposal_to_client"
+      description: "销售角色可以向已签约客户的域名发送方案文档"
+      chain_pattern:
+        - tool: "read_document|search_documents"
+        - tool: "send_email"
+      conditions:
+        caller_role: "sales"
+        caller_department: "sales"
+        target_domain_in: ["@client-a.com", "@partner-b.com", "@*.vendor-verified.com"]
+        document_source: "internal_knowledge_base"
+      max_documents_per_session: 5
+      require_approval: false
+
+    - id: "WL-002"
+      name: "hr_send_jd_to_candidate"
+      description: "HR 角色可以向外部候选人发送 JD"
+      chain_pattern:
+        - tool: "read_document"
+        - tool: "send_email"
+      conditions:
+        caller_role: "hr"
+        caller_department: "hr"
+        target_domain_in: ["*"]
+        document_tag: "job_description"
+      max_documents_per_session: 3
+      require_approval: false
+
+    - id: "WL-003"
+      name: "legal_send_contract_template"
+      description: "法务角色可以发送合同模板到已注册的外部法律实体"
+      chain_pattern:
+        - tool: "read_document"
+        - tool: "send_email"
+      conditions:
+        caller_role: "legal"
+        caller_department: "legal"
+        target_domain_in_whitelist: "legal_external_entities"
+        document_source: "contract_templates"
+      max_documents_per_session: 10
+      require_approval: true

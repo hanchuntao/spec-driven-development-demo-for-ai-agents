@@ -1,0 +1,146 @@
+# ─────────────────────────────────────────────
+# 工具调用安全策略（Tool-Use Policy Spec）
+# Agent SDD 的核心战场。
+# 前置条件（precondition）：LLM 构造参数后、执行前拦截
+# 后置条件（postcondition）：工具执行后、结果返回 LLM 前拦截
+# ─────────────────────────────────────────────
+
+tool_policies:
+  version: "1.2.0"
+
+  send_email:
+    preconditions:
+      - id: "TOOL-PRE-001"
+        name: "recipient_scope"
+        description: "限制非管理员用户只能向同部门成员发送邮件"
+        rule: |
+          let allowed_domains = context.caller.department.member_domains;
+          let recipients = extract_email_domains(params.recipient);
+          let violations = recipients.filter(d => !allowed_domains.includes(d));
+          violations.length == 0
+        on_violation: "block"
+        error_code: "POLICY_TOOL_RECIPIENT_SCOPE"
+        error_message: "收件人 {violations} 不在允许的域名范围内"
+
+      - id: "TOOL-PRE-002"
+        name: "attachment_type_whitelist"
+        description: "限制可发送的附件类型"
+        rule: "params.attachments.every(a => ['pdf','docx','xlsx','txt'].includes(a.type))"
+        on_violation: "block"
+        error_code: "POLICY_TOOL_ATTACHMENT_TYPE"
+
+      - id: "TOOL-PRE-003"
+        name: "external_url_check"
+        description: "检测邮件正文中的外部链接，提取域名后与白名单比对"
+        rule: |
+          let urls = extract_urls(params.body);
+          urls.every(u => context.organization.whitelisted_domains.includes(u.hostname))
+        on_violation: "block_and_alert"
+        error_code: "POLICY_TOOL_EXTERNAL_URL"
+
+    postconditions:
+      - id: "TOOL-POST-001"
+        name: "audit_trail"
+        description: "记录所有工具调用的完整审计日志"
+        rule: "always"
+        action: "write_structured_log"
+        log_schema:
+          fields: [timestamp, caller_id, tool_name, params_hash, result_summary, latency_ms]
+
+      - id: "TOOL-POST-002"
+        name: "result_sanitization"
+        description: "工具返回结果中若包含 PII，自动脱敏后返回"
+        rule: "always"
+        action: "sanitize_pii"
+        sanitize_rules:
+          - pattern: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+            replacement: "[SSN REDACTED]"
+          - pattern: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"
+            replacement: "[EMAIL REDACTED]"
+
+      - id: "TOOL-POST-003"
+        name: "rate_limit_enforce"
+        description: "基于调用者维度的频率限制"
+        rule: |
+          let key = `${context.caller.id}:${tool_name}:${time_window_1min}`;
+          cache.incr(key) <= tool.rate_limit.per_minute
+        on_violation: "block"
+        error_code: "POLICY_TOOL_RATE_LIMIT"
+
+      # ── 工具返回结果异常检测 (§3.3.2.1) ──
+      - id: "TOOL-POST-004"
+        name: "result_integrity_check"
+        description: "检测工具返回结果的完整性——数量异常、结构异常、注入残留"
+        rule: "always"
+        checks:
+          - type: "cardinality_check"
+            description: "返回结果数量与预期偏差过大时告警"
+            rule: |
+              if tool_response.expected_item_count != null {
+                let actual = count(tool_response.items);
+                let deviation = abs(actual - tool_response.expected_item_count) / tool_response.expected_item_count;
+                deviation < 0.3
+              }
+            on_violation: "flag_for_review"
+
+          - type: "empty_result_check"
+            description: "高频查询工具不应频繁返回空结果"
+            rule: |
+              if tool.is_high_frequency_query && tool_response.items.length == 0 {
+                cache.incr_empty_count(tool.name, context.caller.id);
+                cache.get_empty_ratio(tool.name, window=10min) < 0.5
+              }
+            on_violation: "flag_and_notify"
+            error_code: "TOOL_ANOMALY_HIGH_EMPTY_RATE"
+
+          - type: "injection_residue_check"
+            description: "检测工具返回结果中是否残留 prompt 注入 payload"
+            rule: |
+              let ai_instruction_patterns = [
+                /ignore\s+(all\s+)?(previous|above)\s+instructions?/i,
+                /you\s+are\s+now\s+(a|an)\s+/i,
+                /\[system\]|\[\/system\]|<system>/i
+              ];
+              !tool_response.raw_text.match_any(ai_instruction_patterns)
+            on_violation: "sanitize_or_block"
+            error_code: "TOOL_ANOMALY_INJECTION_RESIDUE"
+
+          - type: "data_freshness_check"
+            description: "确保关键查询返回的是最新数据"
+            rule: |
+              if tool.is_read_your_own_writes_sensitive {
+                tool_response.data_timestamp >= (now - context.last_write_timestamp - 5000ms)
+              }
+            on_violation: "flag_for_review"
+            error_code: "TOOL_ANOMALY_STALE_DATA"
+
+      - id: "TOOL-POST-005"
+        name: "result_schema_validation"
+        description: "即使工具声称返回成功，也要再次校验结果是否符合 Schema"
+        rule: "always"
+        action: "validate_json_schema"
+        schema_ref: "#/components/schemas/ToolResponse"
+        on_violation: "block_and_alert"
+        error_code: "TOOL_ANOMALY_SCHEMA_MISMATCH"
+
+  create_ticket:
+    preconditions:
+      - id: "TOOL-PRE-010"
+        name: "ticket_priority_check"
+        description: "紧急工单只能由特定角色创建"
+        rule: |
+          if params.priority == "critical" {
+            return context.caller.role == "oncall_engineer";
+          }
+          return true;
+        on_violation: "block"
+        error_code: "POLICY_TOOL_CRITICAL_TICKET_PERMISSION"
+
+  search_documents:
+    preconditions:
+      - id: "TOOL-PRE-020"
+        name: "classification_check"
+        description: "文档密级不得高于用户安全级别"
+        rule: "params.query.classification_level <= context.user.clearance_level"
+        on_violation: "block"
+        error_code: "POLICY_CLASSIFICATION_VIOLATION"
